@@ -1,0 +1,47 @@
+version: "3.9"
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000" # Rails API on port 3000
+    environment:
+      - DATABASE_URL=postgres://postgres:password@db:5432/app_development
+      - SECRET_KEY_BASE="telomelonia"
+      - RAILS_ENV=development
+      - DATABASE_PASSWORD=password
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+
+  db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: app_development
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080" # Next.js on port 8080
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3000/graphql
+    volumes:
+      - ./frontend:/app
+
+volumes:
+  db_data:
