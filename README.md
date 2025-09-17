@@ -1,2 +1,0 @@
-# community
-community platform
