@@ -6,3 +6,6 @@ pyserial
 numpy
 pandas
 plotly
+mcp
+httpx
+asyncio-compat

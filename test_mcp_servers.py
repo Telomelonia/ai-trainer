@@ -10,29 +10,55 @@ import asyncio
 import json
 import sys
 import os
+import importlib.util
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def import_server_module(server_name):
+    """Dynamically import a server module"""
+    try:
+        server_path = os.path.join('mcp_servers', f'{server_name}.py')
+        if os.path.exists(server_path):
+            spec = importlib.util.spec_from_file_location(server_name, server_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        else:
+            print(f"Server file not found: {server_path}")
+            return None
+    except Exception as e:
+        print(f"Error importing {server_name}: {e}")
+        return None
 
 async def test_server_imports():
     """Test that all MCP servers can be imported"""
     print("🧪 Testing MCP Server Imports...")
     
     try:
-        # Test fitness data server
-        sys.path.append('mcp_servers')
-        
         print("  ✅ Testing fitness_data_server import...")
-        import fitness_data_server
-        print("     ✓ fitness_data_server imported successfully")
+        fitness_module = import_server_module('fitness_data_server')
+        if fitness_module:
+            print("     ✓ fitness_data_server imported successfully")
+        else:
+            print("     ❌ fitness_data_server import failed")
+            return False
         
         print("  ✅ Testing user_profile_server import...")
-        import user_profile_server
-        print("     ✓ user_profile_server imported successfully")
+        user_module = import_server_module('user_profile_server')
+        if user_module:
+            print("     ✓ user_profile_server imported successfully")
+        else:
+            print("     ❌ user_profile_server import failed")
+            return False
         
         print("  ✅ Testing progress_analytics_server import...")
-        import progress_analytics_server
-        print("     ✓ progress_analytics_server imported successfully")
+        progress_module = import_server_module('progress_analytics_server')
+        if progress_module:
+            print("     ✓ progress_analytics_server imported successfully")
+        else:
+            print("     ❌ progress_analytics_server import failed")
+            return False
         
         return True
         
@@ -45,25 +71,28 @@ async def test_tool_definitions():
     print("\n🔧 Testing Tool Definitions...")
     
     try:
-        # Import the servers
-        sys.path.append('mcp_servers')
-        import fitness_data_server
-        import user_profile_server
-        import progress_analytics_server
+        # Import the servers dynamically
+        fitness_module = import_server_module('fitness_data_server')
+        user_module = import_server_module('user_profile_server')
+        progress_module = import_server_module('progress_analytics_server')
+        
+        if not all([fitness_module, user_module, progress_module]):
+            print("  ❌ Failed to import all server modules")
+            return False
         
         # Test fitness data server tools
         print("  📊 Fitness Data Server Tools:")
-        fitness_tools = await fitness_data_server.handle_list_tools()
+        fitness_tools = await fitness_module.handle_list_tools()
         for tool in fitness_tools:
             print(f"     ✓ {tool.name}: {tool.description}")
         
         print("  👤 User Profile Server Tools:")
-        profile_tools = await user_profile_server.handle_list_tools()
+        profile_tools = await user_module.handle_list_tools()
         for tool in profile_tools:
             print(f"     ✓ {tool.name}: {tool.description}")
         
         print("  📈 Progress Analytics Server Tools:")
-        analytics_tools = await progress_analytics_server.handle_list_tools()
+        analytics_tools = await progress_module.handle_list_tools()
         for tool in analytics_tools:
             print(f"     ✓ {tool.name}: {tool.description}")
         
@@ -81,23 +110,27 @@ async def test_tool_execution():
     print("\n⚡ Testing Tool Execution...")
     
     try:
-        sys.path.append('mcp_servers')
-        import fitness_data_server
-        import user_profile_server
-        import progress_analytics_server
+        # Import the servers dynamically
+        fitness_module = import_server_module('fitness_data_server')
+        user_module = import_server_module('user_profile_server')
+        progress_module = import_server_module('progress_analytics_server')
+        
+        if not all([fitness_module, user_module, progress_module]):
+            print("  ❌ Failed to import all server modules")
+            return False
         
         # Test fitness data server
         print("  📊 Testing Fitness Data Server:")
         
         # Test get_current_stability_score
-        result = await fitness_data_server.handle_call_tool(
+        result = await fitness_module.handle_call_tool(
             "get_current_stability_score", 
             {"user_id": "test_user"}
         )
         print("     ✓ get_current_stability_score executed")
         
         # Test log_exercise_session
-        result = await fitness_data_server.handle_call_tool(
+        result = await fitness_module.handle_call_tool(
             "log_exercise_session",
             {
                 "user_id": "test_user",
@@ -111,7 +144,7 @@ async def test_tool_execution():
         # Test user profile server
         print("  👤 Testing User Profile Server:")
         
-        result = await user_profile_server.handle_call_tool(
+        result = await user_module.handle_call_tool(
             "get_user_preferences",
             {"user_id": "user_123"}
         )
@@ -120,13 +153,13 @@ async def test_tool_execution():
         # Test progress analytics server
         print("  📈 Testing Progress Analytics Server:")
         
-        result = await progress_analytics_server.handle_call_tool(
+        result = await progress_module.handle_call_tool(
             "calculate_improvement_rate",
             {"user_id": "user_123", "metric": "stability_score", "days": 7}
         )
         print("     ✓ calculate_improvement_rate executed")
         
-        result = await progress_analytics_server.handle_call_tool(
+        result = await progress_module.handle_call_tool(
             "generate_weekly_report",
             {"user_id": "user_123"}
         )

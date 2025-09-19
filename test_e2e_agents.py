@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 import os
+import importlib.util
 from datetime import datetime
 
 # Add agent directory to path
@@ -20,6 +21,22 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'agents'))
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("e2e-test")
+
+def import_agent_module(module_name):
+    """Dynamically import an agent module"""
+    try:
+        module_path = os.path.join(os.path.dirname(__file__), 'agents', f'{module_name}.py')
+        if os.path.exists(module_path):
+            spec = importlib.util.spec_from_file_location(module_name, module_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        else:
+            print(f"Agent file not found: {module_path}")
+            return None
+    except Exception as e:
+        print(f"Error importing {module_name}: {e}")
+        return None
 
 class CoreTrainingE2ETest:
     """End-to-end test suite for the Core Training AI ecosystem"""

@@ -13,7 +13,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # Add current directory and agents directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 agents_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'agents')
+sensors_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'sensors')
+config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config')
 sys.path.append(agents_path)
+sys.path.append(sensors_path)
+sys.path.append(config_path)
 
 # Import our custom modules
 try:
@@ -23,10 +27,25 @@ except ImportError as e:
     st.warning(f"Arduino connector not available: {e}")
     ARDUINO_AVAILABLE = False
 
+# Import sensor system
+SENSOR_AVAILABLE = False
+sensor_manager = None
+
+try:
+    from sensors import SensorFactory, BaseSensor
+    from config import DEMO_MODE, get_enabled_sensors, get_active_sensor_config
+    SENSOR_AVAILABLE = True
+    st.success("✅ Multi-sensor platform loaded successfully!")
+except ImportError as e:
+    st.warning(f"⚠️ Sensor system not available: {e}")
+except Exception as e:
+    st.warning(f"⚠️ Error loading sensor system: {e}")
+
 # Import agent modules
 AGENT_AVAILABLE = False
 core_training_agent = None
 agent_orchestrator = None
+AgentCapability = None
 
 try:
     # Check if agent files exist first
@@ -35,8 +54,18 @@ try:
     orchestrator_file = os.path.join(agents_path, 'agent_orchestrator.py')
     
     if os.path.exists(agent_file) and os.path.exists(orchestrator_file):
-        from core_training_agent import core_training_agent
-        from agent_orchestrator import agent_orchestrator, AgentCapability
+        # Import the modules dynamically
+        spec = importlib.util.spec_from_file_location("core_training_agent", agent_file)
+        core_training_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(core_training_module)
+        core_training_agent = core_training_module.CoreTrainingAgent()
+        
+        spec = importlib.util.spec_from_file_location("agent_orchestrator", orchestrator_file)
+        orchestrator_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(orchestrator_module)
+        agent_orchestrator = orchestrator_module.AgentOrchestrator()
+        AgentCapability = orchestrator_module.AgentCapability
+        
         AGENT_AVAILABLE = True
         st.success("✅ AI Agent system loaded successfully!")
     else:
@@ -113,6 +142,28 @@ st.markdown("""
 
 # Navigation sidebar
 st.sidebar.title("🏋️ Core Training AI")
+
+# System status display
+st.sidebar.markdown("### 🔧 System Status")
+if SENSOR_AVAILABLE:
+    sensor_status = "🟢 Active" if st.session_state.get('sensor_connected') else "🟡 Available"
+    st.sidebar.markdown(f"**Multi-Sensor Platform:** {sensor_status}")
+else:
+    st.sidebar.markdown("**Multi-Sensor Platform:** 🔴 Unavailable")
+
+if AGENT_AVAILABLE:
+    agent_status = "🟢 Ready" if st.session_state.get('agent_initialized') else "🟡 Available"
+    st.sidebar.markdown(f"**AI Agent System:** {agent_status}")
+else:
+    st.sidebar.markdown("**AI Agent System:** 🔴 Unavailable")
+
+if ARDUINO_AVAILABLE:
+    st.sidebar.markdown("**Arduino Connector:** 🟢 Available")
+else:
+    st.sidebar.markdown("**Arduino Connector:** 🟡 Fallback Mode")
+
+st.sidebar.markdown("---")
+
 page = st.sidebar.selectbox("Navigate", [
     "Live Dashboard", 
     "User Profile", 
@@ -120,7 +171,33 @@ page = st.sidebar.selectbox("Navigate", [
     "Progress Analytics"
 ])
 
-# Initialize Arduino connector in session state
+# Initialize sensor system in session state
+if 'sensor_manager' not in st.session_state:
+    if SENSOR_AVAILABLE:
+        try:
+            # Create primary IMU sensor
+            sensor_config = get_active_sensor_config('primary_imu')
+            if sensor_config.get('enabled', False):
+                st.session_state.sensor_manager = SensorFactory.create_sensor(
+                    sensor_type="imu",
+                    sensor_id="ui_primary_imu",
+                    config=sensor_config.get('config', {})
+                )
+                # Initialize sensor asynchronously (simplified for UI)
+                st.session_state.sensor_connected = True
+                st.session_state.sensor_calibrated = True
+            else:
+                st.session_state.sensor_manager = None
+                st.session_state.sensor_connected = False
+        except Exception as e:
+            st.error(f"Failed to initialize sensor: {e}")
+            st.session_state.sensor_manager = None
+            st.session_state.sensor_connected = False
+    else:
+        st.session_state.sensor_manager = None
+        st.session_state.sensor_connected = False
+
+# Initialize Arduino connector in session state (fallback)
 if 'arduino_connector' not in st.session_state:
     if ARDUINO_AVAILABLE:
         st.session_state.arduino_connector = ArduinoConnector(simulation_mode=True)
@@ -157,17 +234,37 @@ def simulate_stability_data():
         "session_duration": f"{random.randint(1, 5)}:{random.randint(10, 59):02d}"
     }
 
-# Get current data from Arduino or simulation
+# Get current data from sensors or simulation
 def get_current_data():
-    """Get current stability data"""
+    """Get current stability data from sensors or simulation"""
+    # Try new sensor system first
+    if st.session_state.get('sensor_manager') and st.session_state.get('sensor_connected'):
+        try:
+            # Simulate async call for UI (in production, handle properly)
+            sensor = st.session_state.sensor_manager
+            if hasattr(sensor, '_generate_simulation_data'):
+                sensor_data = sensor._generate_simulation_data()
+                return {
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                    "stability_score": sensor_data.get('stability_score', 85.0),
+                    "movement_variance": sensor_data.get('movement_variance', 0.3),
+                    "form_quality": sensor_data.get('movement_quality', 'Good'),
+                    "session_duration": f"{random.randint(1, 5)}:{random.randint(10, 59):02d}",
+                    "sensor_source": "multi_sensor_platform"
+                }
+        except Exception as e:
+            st.error(f"Sensor error: {e}")
+    
+    # Fallback to Arduino connector
+    arduino = st.session_state.arduino_connector
     if arduino and ARDUINO_AVAILABLE:
         try:
             return arduino.get_current_stability_data()
         except Exception as e:
             st.error(f"Arduino error: {e}")
-            return simulate_stability_data()
-    else:
-        return simulate_stability_data()
+    
+    # Final fallback to simulation
+    return simulate_stability_data()
 
 # Page routing
 if page == "Live Dashboard":
