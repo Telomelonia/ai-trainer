@@ -30,6 +30,14 @@ except ImportError:
     FABRIC_SENSOR_AVAILABLE = False
     logger.warning("CoreSense fabric sensor not available")
 
+# Import OpenAI integration
+try:
+    from agents.openai_integration import OpenAIFitnessCoach
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logger.warning("OpenAI integration not available")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("core-training-agent")
@@ -63,6 +71,16 @@ class CoreTrainingAgent:
         if FABRIC_SENSOR_AVAILABLE:
             self.fabric_sensor = CoreSenseFabricSensor()
             logger.info("CoreSense fabric sensor initialized")
+        
+        # OpenAI integration for intelligent coaching
+        self.ai_coach = None
+        if OPENAI_AVAILABLE:
+            try:
+                self.ai_coach = OpenAIFitnessCoach()
+                logger.info("OpenAI fitness coach initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI coach: {str(e)}")
+                self.ai_coach = None
         
         logger.info(f"CoreTrainingAgent initialized with capabilities: {self.capabilities}")
     
@@ -122,8 +140,8 @@ class CoreTrainingAgent:
             improvement_rate = improvement_data.get("improvement_rate", 0)
             user_level = user_prefs.get("personal_info", {}).get("fitness_level", "beginner")
             
-            # Generate intelligent coaching advice based on data
-            coaching_advice = self._generate_coaching_advice(
+            # Generate intelligent coaching advice using AI or fallback
+            coaching_advice = await self._generate_coaching_advice(
                 current_score, form_quality, improvement_rate, user_level
             )
             
@@ -193,8 +211,8 @@ class CoreTrainingAgent:
             user_level = user_prefs.get("personal_info", {}).get("fitness_level", "beginner")
             preferred_duration = user_prefs.get("preferences", {}).get("session_duration_minutes", 30)
             
-            # Generate contextual coaching based on exercise and score
-            coaching_cues = self._generate_exercise_cues(current_exercise, current_score, user_level)
+            # Generate contextual coaching using AI or fallback
+            coaching_cues = await self._generate_exercise_cues(current_exercise, current_score, user_level)
             
             coaching = {
                 "user_id": user_id,
@@ -280,10 +298,11 @@ class CoreTrainingAgent:
             preferred_exercises = user_prefs.get("preferences", {}).get("preferred_exercises", ["plank"])
             improvement_rate = improvement_data.get("improvement_rate", 0)
             
-            # Generate personalized workout plan
-            workout_plan = self._create_personalized_plan(
+            # Generate personalized workout plan using AI or fallback
+            workout_plan = await self._create_personalized_plan(
                 user_id, fitness_level, session_duration, preferred_exercises, 
-                improvement_rate, recommendations.get("recommendations", [])
+                improvement_rate, recommendations.get("recommendations", []),
+                user_prefs
             )
             
             logger.info(f"Generated personalized workout plan for user {user_id}, level {fitness_level}")
@@ -438,8 +457,25 @@ class CoreTrainingAgent:
                 "generated_at": datetime.now().isoformat()
             }
     
-    def _generate_coaching_advice(self, score: float, form_quality: str, improvement_rate: float, user_level: str) -> Dict[str, Any]:
-        """Generate intelligent coaching advice based on current data"""
+    async def _generate_coaching_advice(self, score: float, form_quality: str, improvement_rate: float, user_level: str) -> Dict[str, Any]:
+        """Generate intelligent coaching advice using AI or fallback to rule-based logic"""
+        
+        # Try AI-powered coaching first
+        if self.ai_coach:
+            try:
+                ai_advice = await self.ai_coach.generate_coaching_advice(
+                    current_score=score,
+                    form_quality=form_quality, 
+                    improvement_rate=improvement_rate,
+                    user_level=user_level
+                )
+                logger.info("Generated AI-powered coaching advice")
+                return ai_advice
+            except Exception as e:
+                logger.warning(f"AI coaching failed, using fallback: {str(e)}")
+        
+        # Fallback to rule-based coaching logic
+        logger.info("Using fallback rule-based coaching advice")
         
         # Determine improvement areas based on score
         improvement_areas = []
@@ -498,8 +534,24 @@ class CoreTrainingAgent:
             "confidence": confidence
         }
     
-    def _generate_exercise_cues(self, exercise: str, score: float, user_level: str) -> Dict[str, Any]:
-        """Generate exercise-specific coaching cues based on current performance"""
+    async def _generate_exercise_cues(self, exercise: str, score: float, user_level: str) -> Dict[str, Any]:
+        """Generate exercise-specific coaching cues using AI or fallback to rule-based logic"""
+        
+        # Try AI-powered exercise cues first
+        if self.ai_coach:
+            try:
+                ai_cues = await self.ai_coach.generate_exercise_cues(
+                    exercise=exercise,
+                    current_score=score,
+                    user_level=user_level
+                )
+                logger.info(f"Generated AI-powered exercise cues for {exercise}")
+                return ai_cues
+            except Exception as e:
+                logger.warning(f"AI exercise cues failed, using fallback: {str(e)}")
+        
+        # Fallback to rule-based exercise cues
+        logger.info(f"Using fallback rule-based exercise cues for {exercise}")
         
         exercise_lower = exercise.lower()
         
@@ -576,10 +628,53 @@ class CoreTrainingAgent:
             "focus_area": base_cues["focus_area"]
         }
     
-    def _create_personalized_plan(self, user_id: str, fitness_level: str, session_duration: int, 
-                                 preferred_exercises: List[str], improvement_rate: float,
-                                 recommendations: List[Dict]) -> Dict[str, Any]:
-        """Create a personalized workout plan based on user data"""
+    async def _create_personalized_plan(self, user_id: str, fitness_level: str, session_duration: int, 
+                                       preferred_exercises: List[str], improvement_rate: float,
+                                       recommendations: List[Dict], user_prefs: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a personalized workout plan using AI or fallback to rule-based logic"""
+        
+        # Try AI-powered workout planning first
+        if self.ai_coach:
+            try:
+                user_profile = {
+                    "fitness_level": fitness_level,
+                    "session_duration": session_duration,
+                    "preferred_exercises": preferred_exercises,
+                    "goals": user_prefs.get("preferences", {}).get("goals", "improve core strength")
+                }
+                
+                performance_data = {
+                    "improvement_rate": improvement_rate,
+                    "recommendations": recommendations
+                }
+                
+                ai_plan = await self.ai_coach.create_personalized_plan(
+                    user_profile=user_profile,
+                    performance_data=performance_data
+                )
+                
+                # Add metadata for the response format
+                ai_plan.update({
+                    "user_id": user_id,
+                    "plan_id": f"plan_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M')}",
+                    "difficulty_level": fitness_level,
+                    "personalization_factors": {
+                        "fitness_level": fitness_level,
+                        "preferred_exercises": preferred_exercises,
+                        "improvement_rate": improvement_rate,
+                        "target_duration": session_duration
+                    },
+                    "generated_at": datetime.now().isoformat()
+                })
+                
+                logger.info(f"Generated AI-powered workout plan for user {user_id}")
+                return ai_plan
+                
+            except Exception as e:
+                logger.warning(f"AI workout planning failed, using fallback: {str(e)}")
+        
+        # Fallback to rule-based workout planning
+        logger.info(f"Using fallback rule-based workout planning for user {user_id}")
         
         # Base exercise library with modifications based on fitness level
         exercise_library = {
@@ -775,6 +870,7 @@ class CoreTrainingAgent:
                 "progress_analytics": self.is_connected
             },
             "fabric_sensor_available": FABRIC_SENSOR_AVAILABLE,
+            "openai_available": OPENAI_AVAILABLE and self.ai_coach is not None,
             "last_updated": datetime.now().isoformat()
         }
     
@@ -856,7 +952,7 @@ class CoreTrainingAgent:
                 )
             
             # Generate AI coaching based on muscle activation patterns
-            coaching_insights = self._analyze_muscle_activation_patterns(
+            coaching_insights = await self._analyze_muscle_activation_patterns(
                 muscle_data, user_prefs
             )
             
@@ -946,10 +1042,25 @@ class CoreTrainingAgent:
                 "timestamp": datetime.now().isoformat()
             }
     
-    def _analyze_muscle_activation_patterns(self, muscle_data: Dict[str, Any], user_prefs: Dict[str, Any]) -> Dict[str, Any]:
+    async def _analyze_muscle_activation_patterns(self, muscle_data: Dict[str, Any], user_prefs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Analyze muscle activation patterns and provide AI coaching insights
+        Analyze muscle activation patterns using AI or fallback to rule-based analysis
         """
+        
+        # Try AI-powered muscle activation analysis first
+        if self.ai_coach:
+            try:
+                ai_analysis = await self.ai_coach.analyze_muscle_activation_patterns(
+                    muscle_data=muscle_data,
+                    user_prefs=user_prefs
+                )
+                logger.info("Generated AI-powered muscle activation analysis")
+                return ai_analysis
+            except Exception as e:
+                logger.warning(f"AI muscle analysis failed, using fallback: {str(e)}")
+        
+        # Fallback to rule-based muscle activation analysis
+        logger.info("Using fallback rule-based muscle activation analysis")
         activation = muscle_data.get("muscle_activation", {})
         form_analysis = muscle_data.get("form_analysis", {})
         exercise = muscle_data.get("exercise", "unknown")
