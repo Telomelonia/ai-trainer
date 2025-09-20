@@ -194,81 +194,6 @@ class RealTimeSensorManager:
             logger.error(f"Error collecting sensor data: {e}")
             return {'error': str(e)}
     
-    async def complete_session(self, session_uuid: str, completion_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Complete a fitness session and calculate final metrics"""
-        try:
-            if session_uuid not in self.active_sessions:
-                raise ValueError(f"Session {session_uuid} not found")
-            
-            session_info = self.active_sessions[session_uuid]
-            
-            with get_db_session() as db:
-                # Get session from database
-                session = db.query(FitnessSession).filter(
-                    FitnessSession.id == session_info['session_id']
-                ).first()
-                
-                if not session:
-                    raise ValueError("Session not found in database")
-                
-                # Calculate final metrics from collected data
-                final_metrics = await self._calculate_final_metrics(session_uuid, db)
-                
-                # Update session with completion data
-                session.completed_at = datetime.now(timezone.utc)
-                session.actual_duration = int((session.completed_at - session.started_at).total_seconds())
-                session.completion_status = completion_data.get('status', 'completed')
-                session.completion_percentage = completion_data.get('completion_percentage', 100.0)
-                
-                # Set performance metrics
-                session.stability_score = final_metrics.get('stability_score', 0.0)
-                session.form_quality_score = final_metrics.get('form_quality_score', 0.0)
-                session.consistency_score = final_metrics.get('consistency_score', 0.0)
-                session.endurance_score = final_metrics.get('endurance_score', 0.0)
-                session.movement_variance = final_metrics.get('movement_variance', 0.0)
-                session.calculate_overall_performance()
-                
-                # Get AI analysis if configured
-                if completion_data.get('generate_ai_feedback', True):
-                    ai_feedback = await self._generate_ai_feedback(session_uuid, final_metrics)
-                    session.ai_form_feedback = ai_feedback.get('form_feedback', {})
-                    session.improvement_suggestions = ai_feedback.get('improvement_suggestions', [])
-                    session.performance_insights = ai_feedback.get('performance_insights', {})
-                
-                # Check for personal best
-                session.personal_best = await self._check_personal_best(session, db)
-                
-                # Calculate improvement from last session
-                session.improvement_from_last = await self._calculate_improvement(session, db)
-                
-                db.commit()
-                
-                # Clean up active session
-                del self.active_sessions[session_uuid]
-                if session_uuid in self.data_streams:
-                    del self.data_streams[session_uuid]
-                
-                logger.info(f"Completed session {session_uuid} - Score: {session.overall_performance:.1f}")
-                
-                return {
-                    'session_uuid': session_uuid,
-                    'session_id': session.id,
-                    'completion_status': session.completion_status,
-                    'duration_seconds': session.actual_duration,
-                    'duration_minutes': session.duration_minutes,
-                    'overall_performance': session.overall_performance,
-                    'stability_score': session.stability_score,
-                    'form_quality_score': session.form_quality_score,
-                    'personal_best': session.personal_best,
-                    'improvement_from_last': session.improvement_from_last,
-                    'ai_feedback': session.ai_form_feedback,
-                    'data_points_collected': session_info.get('data_points', 0)
-                }
-                
-        except Exception as e:
-            logger.error(f"Error completing session: {e}")
-            return {'error': str(e)}
-    
     def _process_sensor_data(self, sensor_type: str, raw_data: Any) -> Dict[str, Any]:
         """Process raw sensor data based on sensor type"""
         if sensor_type == 'emg':
@@ -422,164 +347,11 @@ class RealTimeSensorManager:
             })
         
         return events
-    
-    async def _calculate_final_metrics(self, session_uuid: str, db: Session) -> Dict[str, Any]:
-        """Calculate final performance metrics for completed session"""
-        if session_uuid not in self.active_sessions:
-            return {}
-        
-        session_info = self.active_sessions[session_uuid]
-        
-        # Get all sensor data for this session
-        sensor_data = db.query(SensorData).filter(
-            SensorData.session_id == session_info['session_id']
-        ).all()
-        
-        if not sensor_data:
-            return {'stability_score': 0, 'form_quality_score': 0, 'consistency_score': 0, 'endurance_score': 0}
-        
-        # Aggregate metrics
-        stability_scores = []
-        signal_qualities = []
-        
-        for data_point in sensor_data:
-            if data_point.processed_data and 'stability_metric' in data_point.processed_data:
-                stability_scores.append(data_point.processed_data['stability_metric'])
-            if data_point.signal_quality:
-                signal_qualities.append(data_point.signal_quality)
-        
-        # Calculate final scores
-        stability_score = sum(stability_scores) / len(stability_scores) if stability_scores else 0
-        form_quality_score = sum(signal_qualities) / len(signal_qualities) if signal_qualities else 0
-        
-        # Calculate consistency (lower variance = higher consistency)
-        if len(stability_scores) > 1:
-            variance = sum((x - stability_score)**2 for x in stability_scores) / len(stability_scores)
-            consistency_score = max(0, 100 - variance)
-        else:
-            consistency_score = 100
-        
-        # Endurance score based on performance maintenance over time
-        if len(stability_scores) > 10:
-            first_half = stability_scores[:len(stability_scores)//2]
-            second_half = stability_scores[len(stability_scores)//2:]
-            first_avg = sum(first_half) / len(first_half)
-            second_avg = sum(second_half) / len(second_half)
-            endurance_score = min(100, max(0, 100 - (first_avg - second_avg)))
-        else:
-            endurance_score = stability_score
-        
-        # Calculate movement variance
-        movement_variance = variance if len(stability_scores) > 1 else 0
-        
-        return {
-            'stability_score': round(stability_score, 1),
-            'form_quality_score': round(form_quality_score, 1),
-            'consistency_score': round(consistency_score, 1),
-            'endurance_score': round(endurance_score, 1),
-            'movement_variance': round(movement_variance, 2),
-            'total_data_points': len(sensor_data)
-        }
-    
-    async def _generate_ai_feedback(self, session_uuid: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate AI-powered feedback for the session"""
-        try:
-            session_info = self.active_sessions[session_uuid]
-            
-            # Prepare data for AI analysis
-            sensor_summary = {
-                'exercise_type': session_info['exercise_type'],
-                'duration': session_info.get('data_points', 0) * 2,  # Approximate duration
-                'stability_score': metrics.get('stability_score', 0),
-                'form_quality_score': metrics.get('form_quality_score', 0),
-                'consistency_score': metrics.get('consistency_score', 0),
-                'movement_variance': metrics.get('movement_variance', 0)
-            }
-            
-            # Get AI analysis
-            ai_response = await analyze_exercise_form(
-                sensor_data=sensor_summary,
-                exercise_type=session_info['exercise_type'],
-                user_level='intermediate'  # Could be retrieved from user preferences
-            )
-            
-            if ai_response and ai_response.content:
-                try:
-                    feedback_data = json.loads(ai_response.content)
-                    return {
-                        'form_feedback': feedback_data,
-                        'improvement_suggestions': feedback_data.get('corrective_actions', []),
-                        'performance_insights': {
-                            'overall_score': feedback_data.get('overall_score', 0),
-                            'key_strengths': feedback_data.get('key_strengths', []),
-                            'areas_for_improvement': feedback_data.get('areas_for_improvement', []),
-                            'ai_confidence': feedback_data.get('confidence', 0)
-                        }
-                    }
-                except json.JSONDecodeError:
-                    return {'form_feedback': {'raw_response': ai_response.content}}
-            
-        except Exception as e:
-            logger.error(f"Error generating AI feedback: {e}")
-        
-        return {'form_feedback': {}, 'improvement_suggestions': [], 'performance_insights': {}}
-    
-    async def _check_personal_best(self, session: FitnessSession, db: Session) -> bool:
-        """Check if this session represents a personal best"""
-        try:
-            # Get user's previous sessions for the same exercise type
-            previous_sessions = db.query(FitnessSession).filter(
-                and_(
-                    FitnessSession.user_id == session.user_id,
-                    FitnessSession.exercise_type_id == session.exercise_type_id,
-                    FitnessSession.completion_status == 'completed',
-                    FitnessSession.id != session.id
-                )
-            ).all()
-            
-            if not previous_sessions:
-                return True  # First session is always a personal best
-            
-            # Compare overall performance
-            best_previous = max(s.overall_performance or 0 for s in previous_sessions)
-            return (session.overall_performance or 0) > best_previous
-            
-        except Exception as e:
-            logger.error(f"Error checking personal best: {e}")
-            return False
-    
-    async def _calculate_improvement(self, session: FitnessSession, db: Session) -> float:
-        """Calculate improvement percentage from last session"""
-        try:
-            # Get last session for same exercise type
-            last_session = db.query(FitnessSession).filter(
-                and_(
-                    FitnessSession.user_id == session.user_id,
-                    FitnessSession.exercise_type_id == session.exercise_type_id,
-                    FitnessSession.completion_status == 'completed',
-                    FitnessSession.id != session.id
-                )
-            ).order_by(desc(FitnessSession.completed_at)).first()
-            
-            if not last_session or not last_session.overall_performance:
-                return 0.0
-            
-            current_performance = session.overall_performance or 0
-            last_performance = last_session.overall_performance
-            
-            if last_performance > 0:
-                improvement = ((current_performance - last_performance) / last_performance) * 100
-                return round(improvement, 2)
-            
-        except Exception as e:
-            logger.error(f"Error calculating improvement: {e}")
-        
-        return 0.0
 
 # Initialize sensor manager
 sensor_manager = RealTimeSensorManager()
 
-# Create MCP server  
+# Create MCP server
 server = Server("fitness-data-server")
 
 @server.list_tools()
@@ -644,41 +416,6 @@ async def handle_list_tools() -> List[Tool]:
             }
         ),
         Tool(
-            name="complete_fitness_session",
-            description="Complete an active fitness session and calculate final metrics",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_uuid": {
-                        "type": "string",
-                        "description": "Session UUID from start_fitness_session"
-                    },
-                    "completion_data": {
-                        "type": "object",
-                        "description": "Session completion data",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "description": "Completion status (completed, paused, abandoned)",
-                                "default": "completed"
-                            },
-                            "completion_percentage": {
-                                "type": "number",
-                                "description": "Percentage of planned session completed",
-                                "default": 100
-                            },
-                            "generate_ai_feedback": {
-                                "type": "boolean",
-                                "description": "Whether to generate AI feedback",
-                                "default": True
-                            }
-                        }
-                    }
-                },
-                "required": ["session_uuid"]
-            }
-        ),
-        Tool(
             name="get_user_session_history",
             description="Get user's exercise session history with filtering options",
             inputSchema={
@@ -721,53 +458,6 @@ async def handle_list_tools() -> List[Tool]:
                 },
                 "required": []
             }
-        ),
-        Tool(
-            name="get_session_analytics",
-            description="Get detailed analytics for a specific session",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {
-                        "type": "integer",
-                        "description": "Database session ID"
-                    },
-                    "include_sensor_data": {
-                        "type": "boolean",
-                        "description": "Include raw sensor data in response",
-                        "default": False
-                    },
-                    "include_ai_analysis": {
-                        "type": "boolean",
-                        "description": "Include AI analysis in response",
-                        "default": True
-                    }
-                },
-                "required": ["session_id"]
-            }
-        ),
-        Tool(
-            name="get_exercise_recommendations",
-            description="Get AI-powered exercise recommendations for a user",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "user_id": {
-                        "type": "integer",
-                        "description": "User identifier"
-                    },
-                    "current_level": {
-                        "type": "string",
-                        "description": "Current fitness level (beginner, intermediate, advanced)"
-                    },
-                    "focus_areas": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Areas to focus on (stability, strength, endurance, form)"
-                    }
-                },
-                "required": ["user_id"]
-            }
         )
     ]
 
@@ -805,17 +495,6 @@ async def handle_call_tool(name: str, arguments: dict) -> List[TextContent]:
             sensor_data = arguments["sensor_data"]
             
             result = await sensor_manager.collect_sensor_data(session_uuid, sensor_data)
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps(result, default=str)
-            )]
-        
-        elif name == "complete_fitness_session":
-            session_uuid = arguments["session_uuid"]
-            completion_data = arguments.get("completion_data", {})
-            
-            result = await sensor_manager.complete_session(session_uuid, completion_data)
             
             return [TextContent(
                 type="text",
@@ -917,155 +596,6 @@ async def handle_call_tool(name: str, arguments: dict) -> List[TextContent]:
                 text=json.dumps(live_data)
             )]
         
-        elif name == "get_session_analytics":
-            session_id = arguments["session_id"]
-            include_sensor_data = arguments.get("include_sensor_data", False)
-            include_ai_analysis = arguments.get("include_ai_analysis", True)
-            
-            with get_db_session() as db:
-                # Get session with related data
-                session = db.query(FitnessSession).options(
-                    selectinload(FitnessSession.exercise_type),
-                    selectinload(FitnessSession.sensor_data),
-                    selectinload(FitnessSession.real_time_events)
-                ).filter(FitnessSession.id == session_id).first()
-                
-                if not session:
-                    return [TextContent(
-                        type="text",
-                        text=json.dumps({"error": "Session not found"})
-                    )]
-                
-                analytics = {
-                    "session_info": {
-                        "session_id": session.id,
-                        "session_uuid": session.session_uuid,
-                        "user_id": session.user_id,
-                        "exercise_type": session.exercise_type.name if session.exercise_type else "unknown",
-                        "started_at": session.started_at.isoformat(),
-                        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
-                        "duration_minutes": session.duration_minutes,
-                        "completion_status": session.completion_status
-                    },
-                    "performance_metrics": {
-                        "overall_performance": session.overall_performance,
-                        "stability_score": session.stability_score,
-                        "form_quality_score": session.form_quality_score,
-                        "consistency_score": session.consistency_score,
-                        "endurance_score": session.endurance_score,
-                        "movement_variance": session.movement_variance,
-                        "personal_best": session.personal_best,
-                        "improvement_from_last": session.improvement_from_last
-                    },
-                    "data_summary": {
-                        "sensor_data_points": len(session.sensor_data),
-                        "real_time_events": len(session.real_time_events),
-                        "data_quality_score": session.data_quality_score
-                    }
-                }
-                
-                if include_ai_analysis:
-                    analytics["ai_analysis"] = {
-                        "form_feedback": session.ai_form_feedback,
-                        "improvement_suggestions": session.improvement_suggestions,
-                        "performance_insights": session.performance_insights
-                    }
-                
-                if include_sensor_data:
-                    analytics["sensor_data"] = [
-                        {
-                            "timestamp": data.timestamp.isoformat(),
-                            "sensor_type": data.sensor_type,
-                            "signal_quality": data.signal_quality,
-                            "processed_data": data.processed_data
-                        }
-                        for data in session.sensor_data[:100]  # Limit to first 100 points
-                    ]
-                
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(analytics, default=str)
-                )]
-        
-        elif name == "get_exercise_recommendations":
-            user_id = arguments["user_id"]
-            current_level = arguments.get("current_level", "intermediate")
-            focus_areas = arguments.get("focus_areas", ["stability", "form"])
-            
-            with get_db_session() as db:
-                # Get user's recent performance data
-                recent_sessions = db.query(FitnessSession).filter(
-                    and_(
-                        FitnessSession.user_id == user_id,
-                        FitnessSession.completion_status == 'completed',
-                        FitnessSession.started_at >= datetime.now(timezone.utc) - timedelta(days=14)
-                    )
-                ).order_by(desc(FitnessSession.completed_at)).limit(10).all()
-                
-                # Get user preferences
-                user_prefs = db.query(UserPreferences).filter(
-                    UserPreferences.user_id == user_id
-                ).first()
-                
-                # Prepare data for AI recommendations
-                performance_data = {
-                    "recent_sessions": len(recent_sessions),
-                    "average_performance": sum(s.overall_performance or 0 for s in recent_sessions) / max(len(recent_sessions), 1),
-                    "average_stability": sum(s.stability_score or 0 for s in recent_sessions) / max(len(recent_sessions), 1),
-                    "focus_areas": focus_areas,
-                    "current_level": current_level
-                }
-                
-                user_profile = {
-                    "fitness_level": current_level,
-                    "preferred_duration": user_prefs.preferred_session_duration if user_prefs else 30,
-                    "goals": user_prefs.long_term_goals if user_prefs else []
-                }
-                
-                preferences = {
-                    "coaching_style": user_prefs.coaching_style if user_prefs else "encouraging",
-                    "preferred_exercises": user_prefs.preferred_exercise_types if user_prefs else [],
-                    "avoided_exercises": user_prefs.avoided_exercise_types if user_prefs else []
-                }
-                
-                # Get AI recommendations
-                from services.openai_service import get_exercise_recommendations
-                ai_response = await get_exercise_recommendations(user_profile, performance_data, preferences)
-                
-                if ai_response and ai_response.content:
-                    try:
-                        recommendations = json.loads(ai_response.content)
-                        return [TextContent(
-                            type="text",
-                            text=json.dumps({
-                                "user_id": user_id,
-                                "recommendations": recommendations,
-                                "based_on": {
-                                    "recent_sessions": len(recent_sessions),
-                                    "performance_data": performance_data,
-                                    "ai_confidence": ai_response.confidence
-                                }
-                            })
-                        )]
-                    except json.JSONDecodeError:
-                        return [TextContent(
-                            type="text",
-                            text=json.dumps({
-                                "user_id": user_id,
-                                "raw_ai_response": ai_response.content,
-                                "note": "AI response could not be parsed as JSON"
-                            })
-                        )]
-            
-            return [TextContent(
-                type="text",
-                text=json.dumps({
-                    "user_id": user_id,
-                    "error": "Unable to generate recommendations",
-                    "suggested_fallback": "Try basic stability exercises"
-                })
-            )]
-        
         else:
             return [TextContent(
                 type="text",
@@ -1074,11 +604,8 @@ async def handle_call_tool(name: str, arguments: dict) -> List[TextContent]:
                     "available_tools": [
                         "start_fitness_session",
                         "collect_sensor_data", 
-                        "complete_fitness_session",
                         "get_user_session_history",
-                        "get_live_sensor_data",
-                        "get_session_analytics",
-                        "get_exercise_recommendations"
+                        "get_live_sensor_data"
                     ]
                 })
             )]

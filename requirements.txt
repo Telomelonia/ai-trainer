@@ -11,6 +11,7 @@ pyserial>=3.5
 mcp>=0.5.0
 httpx>=0.25.0
 openai>=1.100.0
+tiktoken>=0.5.0
 
 # Authentication and Database
 sqlalchemy>=2.0.0
