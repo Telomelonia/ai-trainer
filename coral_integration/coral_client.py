@@ -24,8 +24,8 @@ class CoralAgentInvocation:
 class CoralPayment:
     """Represents a payment transaction"""
     amount: float
-    currency: str = "CORAL"
     recipient_agent_id: str
+    currency: str = "CORAL"
     transaction_hash: Optional[str] = None
     status: str = "pending"
 

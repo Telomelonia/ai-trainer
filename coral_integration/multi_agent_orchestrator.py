@@ -70,8 +70,8 @@ class WorkflowExecution:
 class MultiAgentOrchestrator:
     """Orchestrates complex multi-agent workflows for comprehensive fitness training"""
     
-    def __init__(self, communication_protocol: AgentCommunicationProtocol):
-        self.communication = communication_protocol
+    def __init__(self, communication_protocol: Optional[AgentCommunicationProtocol] = None):
+        self.communication = communication_protocol or AgentCommunicationProtocol()
         self.coral_client = CoralProtocolClient()
         self.logger = logging.getLogger(__name__)
         
@@ -615,4 +615,4 @@ class MultiAgentOrchestrator:
         ]
 
 # Global orchestrator instance
-multi_agent_orchestrator = MultiAgentOrchestrator(None)  # Will be initialized with communication protocol
+multi_agent_orchestrator = MultiAgentOrchestrator()  # Now uses default communication protocol

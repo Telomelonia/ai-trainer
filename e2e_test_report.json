@@ -1,5 +1,5 @@
 {
-  "test_timestamp": "2025-09-19T08:45:33.573432",
+  "test_timestamp": "2025-09-21T00:31:15.147828",
   "ecosystem_version": "1.0.0",
   "phase": "3 - Agent Development",
   "results": {
@@ -12,58 +12,29 @@
       }
     },
     "Core Training Agent": {
-      "status": "PASS",
-      "result": {
-        "agent_connected": true,
-        "capabilities_tested": 4,
-        "stability_score": 87.5,
-        "workout_exercises": 4,
-        "confidence": 0.88
-      }
+      "status": "FAIL",
+      "error": "OpenAI API key not found. Set OPENAI_API_KEY environment variable."
     },
     "Agent Orchestrator": {
-      "status": "PASS",
-      "result": {
-        "orchestrator_active": true,
-        "registered_agents": 1,
-        "comprehensive_session_id": "session_test_user_e2e_20250919_084533",
-        "coordination_successful": true
-      }
+      "status": "FAIL",
+      "error": "OpenAI API key not found. Set OPENAI_API_KEY environment variable."
     },
     "Agent Coordination": {
-      "status": "PASS",
-      "result": {
-        "request_routing_working": true,
-        "successful_request_types": 4,
-        "total_request_types": 4,
-        "coordination_success_rate": 1.0
-      }
+      "status": "FAIL",
+      "error": "OpenAI API key not found. Set OPENAI_API_KEY environment variable."
     },
     "Coral Protocol Preparation": {
-      "status": "PASS",
-      "result": {
-        "coral_manifest_generated": true,
-        "agents_in_manifest": 1,
-        "ecosystem_ready": true,
-        "base_price": 0.1
-      }
+      "status": "FAIL",
+      "error": "No agents in manifest"
     },
     "System Integration": {
-      "status": "PASS",
-      "result": {
-        "full_workflow_successful": true,
-        "mcp_connected": true,
-        "agent_active": true,
-        "orchestrator_ready": true,
-        "data_consistency_validated": true,
-        "session_id": "session_test_user_e2e_20250919_084533",
-        "total_capabilities": 9
-      }
+      "status": "FAIL",
+      "error": "OpenAI API key not found. Set OPENAI_API_KEY environment variable."
     }
   },
   "summary": {
     "total_tests": 6,
-    "passed": 6,
-    "failed": 0
+    "passed": 1,
+    "failed": 5
   }
 }

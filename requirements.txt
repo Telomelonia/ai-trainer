@@ -1,31 +1,40 @@
+# CoreSense AI Platform - Clean Requirements
+# Optimized dependencies following DRY and YAGNI principles
+
+# Core Framework
 streamlit>=1.28.0
-fastapi>=0.104.0
-uvicorn>=0.24.0
-websockets>=12.0
-numpy>=1.24.0
-pandas>=2.0.0
-plotly>=5.17.0
 python-dotenv>=1.0.0
-gunicorn>=21.2.0
-pyserial>=3.5
-mcp>=0.5.0
+
+# Data Processing (only if needed)
+numpy>=1.24.0
+
+# Async Support
+asyncio-compat>=0.1.3
+
+# HTTP Requests
 httpx>=0.25.0
-openai>=1.100.0
-tiktoken>=0.5.0
+aiohttp>=3.8.0  # For coral client async HTTP requests
 
-# Authentication and Database
+# Database (SQLite by default, PostgreSQL optional)
 sqlalchemy>=2.0.0
-alembic>=1.12.0
-bcrypt>=4.0.0
-passlib>=1.7.4
-python-jose[cryptography]>=3.3.0
-python-multipart>=0.0.6
-email-validator>=2.0.0
-Jinja2>=3.1.0
-psycopg2-binary>=2.9.0
 
-# Email
+# Authentication & Security
+bcrypt>=4.0.0
+python-jose[cryptography]>=3.3.0
+passlib>=1.7.4
+
+# Email (simplified)
 yagmail>=0.15.0
 
-# Security
-cryptography>=41.0.0
+# Development & Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Optional: Advanced features (comment out if not needed)
+openai>=1.100.0   # AI features used in coral orchestration
+mcp>=0.5.0        # MCP servers are part of architecture
+plotly>=5.17.0    # Charts needed for muscle activation display
+# pandas>=2.0.0   # Only if data analysis is needed
+
+# Production deployment
+gunicorn>=21.2.0
