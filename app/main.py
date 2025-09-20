@@ -119,29 +119,43 @@ async def initialize_agent_system():
 
 # Page configuration
 st.set_page_config(
-    page_title="Core Training AI Ecosystem",
-    page_icon="🏋️",
+    page_title="CoreSense AI Platform",
+    page_icon="💫",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS for CoreSense styling
 st.markdown("""
 <style>
     .metric-container {
         background-color: #f0f2f6;
         padding: 20px;
         border-radius: 10px;
-        border-left: 5px solid #1f77b4;
+        border-left: 5px solid #6C63FF;
     }
     .status-good { color: #28a745; }
     .status-warning { color: #ffc107; }
     .status-danger { color: #dc3545; }
+    .coresense-header {
+        background: linear-gradient(135deg, #6C63FF 0%, #8B5FBF 100%);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .muscle-activation-chart {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border: 2px solid #6C63FF;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Navigation sidebar
-st.sidebar.title("🏋️ Core Training AI")
+st.sidebar.title("💫 CoreSense AI")
 
 # System status display
 st.sidebar.markdown("### 🔧 System Status")
@@ -166,6 +180,7 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.selectbox("Navigate", [
     "Live Dashboard", 
+    "Muscle Activation", 
     "User Profile", 
     "AI Coach Chat", 
     "Progress Analytics"
@@ -268,8 +283,13 @@ def get_current_data():
 
 # Page routing
 if page == "Live Dashboard":
-    st.title("🏋️ Core Stability Monitor")
-    st.markdown("### Real-time Training Analytics")
+    # CoreSense header
+    st.markdown("""
+    <div class="coresense-header">
+        <h1>💫 CoreSense Live Dashboard</h1>
+        <p>Real-time Core Stability Intelligence</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Get simulated data
     data = get_current_data()
@@ -373,6 +393,136 @@ if page == "Live Dashboard":
     # Auto-refresh every 2 seconds (for demo purposes)
     time.sleep(2)
     st.rerun()
+
+elif page == "Muscle Activation":
+    # CoreSense Muscle Activation Page
+    st.markdown("""
+    <div class="coresense-header">
+        <h1>💫 CoreSense Muscle Activation</h1>
+        <p>Real-time Fabric Sensor Analysis</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Initialize fabric sensor if available
+    if not hasattr(st.session_state, 'fabric_sensor_initialized'):
+        st.session_state.fabric_sensor_initialized = False
+        st.session_state.monitoring_active = False
+        st.session_state.exercise_type = "plank"
+    
+    # Exercise selection and control
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        st.session_state.exercise_type = st.selectbox(
+            "Select Exercise",
+            ["plank", "side_plank", "dead_bug", "bird_dog"],
+            format_func=lambda x: x.replace("_", " ").title()
+        )
+    
+    with col2:
+        if st.button("🚀 Start Monitoring", disabled=st.session_state.monitoring_active):
+            if AGENT_AVAILABLE and core_training_agent and core_training_agent.fabric_sensor:
+                result = asyncio.run(core_training_agent.start_muscle_monitoring("demo_user", st.session_state.exercise_type))
+                if "error" not in result:
+                    st.session_state.monitoring_active = True
+                    st.success("CoreSense monitoring started!")
+                else:
+                    st.error(f"Failed to start monitoring: {result['error']}")
+            else:
+                st.warning("CoreSense fabric sensor not available")
+    
+    with col3:
+        if st.button("⏹️ Stop Monitoring", disabled=not st.session_state.monitoring_active):
+            if AGENT_AVAILABLE and core_training_agent and core_training_agent.fabric_sensor:
+                result = asyncio.run(core_training_agent.stop_muscle_monitoring("demo_user"))
+                st.session_state.monitoring_active = False
+                st.success("Monitoring stopped!")
+                if "session_summary" in result:
+                    st.json(result["session_summary"])
+            else:
+                st.warning("CoreSense fabric sensor not available")
+    
+    # Real-time muscle activation display
+    if st.session_state.monitoring_active and AGENT_AVAILABLE and core_training_agent and core_training_agent.fabric_sensor:
+        try:
+            # Get real-time muscle data
+            muscle_data = asyncio.run(core_training_agent.get_realtime_muscle_analysis("demo_user"))
+            
+            if "error" not in muscle_data:
+                # Display muscle activation chart
+                st.markdown('<div class="muscle-activation-chart">', unsafe_allow_html=True)
+                st.subheader("💪 Real-time Muscle Activation")
+                
+                # Muscle activation metrics
+                activation = muscle_data.get("muscle_activation", {})
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Upper Rectus", f"{activation.get('upper_rectus', 0):.2f}", "Core Upper")
+                    st.metric("Lower Rectus", f"{activation.get('lower_rectus', 0):.2f}", "Core Lower")
+                
+                with col2:
+                    st.metric("Right Oblique", f"{activation.get('right_oblique', 0):.2f}", "Side Right")
+                    st.metric("Left Oblique", f"{activation.get('left_oblique', 0):.2f}", "Side Left")
+                
+                with col3:
+                    st.metric("Transverse", f"{activation.get('transverse', 0):.2f}", "Deep Core")
+                    st.metric("Erector Spinae", f"{activation.get('erector_spinae', 0):.2f}", "Lower Back")
+                
+                # Overall metrics
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    stability_score = muscle_data.get("stability_score", 0)
+                    st.metric("Stability Score", f"{stability_score}%", 
+                             "↗️ Excellent" if stability_score > 85 else "→ Good" if stability_score > 70 else "↘️ Needs Work")
+                
+                with col2:
+                    form_score = muscle_data.get("form_analysis", {}).get("form_score", 0)
+                    st.metric("Form Quality", f"{form_score}/100",
+                             "✅ Great" if form_score > 85 else "⚠️ Check" if form_score > 70 else "❌ Poor")
+                
+                # AI Coaching insights
+                st.subheader("🤖 AI Coaching Insights")
+                coaching = muscle_data.get("ai_coaching", {})
+                
+                if coaching.get("primary_focus"):
+                    st.success("**Strengths:** " + ", ".join(coaching["primary_focus"]))
+                
+                if coaching.get("improvement_areas"):
+                    st.warning("**Areas to Improve:** " + ", ".join(coaching["improvement_areas"]))
+                
+                if coaching.get("coaching_cues"):
+                    st.info("**Coaching Cues:** " + " | ".join(coaching["coaching_cues"]))
+                
+                # Form analysis details
+                form_analysis = muscle_data.get("form_analysis", {})
+                if form_analysis.get("issues") or form_analysis.get("recommendations"):
+                    st.subheader("📋 Form Analysis")
+                    if form_analysis.get("issues"):
+                        for issue in form_analysis["issues"]:
+                            st.error(f"⚠️ {issue}")
+                    if form_analysis.get("recommendations"):
+                        for rec in form_analysis["recommendations"]:
+                            st.info(f"💡 {rec}")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Auto-refresh for real-time updates
+                time.sleep(1)
+                st.rerun()
+                
+            else:
+                st.error(f"Error getting muscle data: {muscle_data['error']}")
+                
+        except Exception as e:
+            st.error(f"Error in muscle monitoring: {str(e)}")
+    
+    elif not st.session_state.monitoring_active:
+        st.info("👆 Click 'Start Monitoring' to begin CoreSense muscle activation analysis")
+    else:
+        st.error("CoreSense fabric sensor system not available")
 
 elif page == "User Profile":
     st.title("👤 User Profile & Preferences")

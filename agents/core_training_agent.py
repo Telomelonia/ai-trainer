@@ -22,6 +22,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import MCP client manager
 from agents.mcp_client_manager import mcp_client_manager
 
+# Import CoreSense fabric sensor agent
+try:
+    from agents.fabric_sensor_agent import CoreSenseFabricSensor
+    FABRIC_SENSOR_AVAILABLE = True
+except ImportError:
+    FABRIC_SENSOR_AVAILABLE = False
+    logger.warning("CoreSense fabric sensor not available")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("core-training-agent")
@@ -35,18 +43,26 @@ class CoreTrainingAgent:
     def __init__(self):
         """Initialize the Core Training Agent"""
         self.agent_id = "core-training-agent"
-        self.version = "1.0.0"
+        self.version = "2.0.0"  # Updated for CoreSense integration
         self.capabilities = [
             "stability_analysis",
             "form_feedback", 
             "progress_tracking",
             "personalized_coaching",
-            "exercise_recommendation"
+            "exercise_recommendation",
+            "muscle_activation_analysis",  # New CoreSense capability
+            "realtime_fabric_sensing"      # New CoreSense capability
         ]
         
         # MCP client manager for server communication
         self.mcp_client = mcp_client_manager
         self.is_connected = False
+        
+        # CoreSense fabric sensor integration
+        self.fabric_sensor = None
+        if FABRIC_SENSOR_AVAILABLE:
+            self.fabric_sensor = CoreSenseFabricSensor()
+            logger.info("CoreSense fabric sensor initialized")
         
         logger.info(f"CoreTrainingAgent initialized with capabilities: {self.capabilities}")
     
@@ -758,8 +774,267 @@ class CoreTrainingAgent:
                 "user_profile": self.is_connected,
                 "progress_analytics": self.is_connected
             },
+            "fabric_sensor_available": FABRIC_SENSOR_AVAILABLE,
             "last_updated": datetime.now().isoformat()
         }
+    
+    async def start_muscle_monitoring(self, user_id: str, exercise_type: str) -> Dict[str, Any]:
+        """
+        Start CoreSense fabric sensor monitoring for muscle activation
+        
+        Args:
+            user_id: User identifier
+            exercise_type: Type of exercise being performed
+            
+        Returns:
+            Dict containing monitoring status and initial data
+        """
+        try:
+            if not self.fabric_sensor:
+                return {"error": "CoreSense fabric sensor not available"}
+            
+            # Start fabric sensor monitoring
+            monitoring_result = await self.fabric_sensor.start_exercise(exercise_type)
+            
+            # Log to fitness data server
+            if self.is_connected:
+                await self.mcp_client.call_tool(
+                    "fitness_data",
+                    "log_exercise_start",
+                    {
+                        "user_id": user_id,
+                        "exercise_type": exercise_type,
+                        "sensor_type": "coresense_fabric",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            
+            logger.info(f"Started CoreSense monitoring for user {user_id}, exercise: {exercise_type}")
+            return {
+                "status": "monitoring_started",
+                "user_id": user_id,
+                "exercise_type": exercise_type,
+                "sensor_data": monitoring_result,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error starting muscle monitoring for user {user_id}: {str(e)}")
+            return {
+                "error": f"Failed to start monitoring: {str(e)}",
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    async def get_realtime_muscle_analysis(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get real-time muscle activation analysis from CoreSense fabric sensors
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Dict containing muscle activation data and AI coaching insights
+        """
+        try:
+            if not self.fabric_sensor:
+                return {"error": "CoreSense fabric sensor not available"}
+            
+            # Get real-time muscle data
+            muscle_data = await self.fabric_sensor.get_data()
+            
+            if "error" in muscle_data:
+                return muscle_data
+            
+            # Get user preferences for personalized coaching
+            user_prefs = {}
+            if self.is_connected:
+                user_prefs = await self.mcp_client.call_tool(
+                    "user_profile",
+                    "get_user_preferences",
+                    {"user_id": user_id}
+                )
+            
+            # Generate AI coaching based on muscle activation patterns
+            coaching_insights = self._analyze_muscle_activation_patterns(
+                muscle_data, user_prefs
+            )
+            
+            # Combine data with coaching insights
+            analysis = {
+                "user_id": user_id,
+                "muscle_activation": muscle_data["muscle_activation"],
+                "stability_score": muscle_data["overall_stability"],
+                "form_analysis": muscle_data["form_analysis"],
+                "exercise_type": muscle_data["exercise"],
+                "ai_coaching": coaching_insights,
+                "timestamp": muscle_data["timestamp"]
+            }
+            
+            # Log data to fitness server if connected
+            if self.is_connected:
+                await self.mcp_client.call_tool(
+                    "fitness_data",
+                    "log_stability_data",
+                    {
+                        "user_id": user_id,
+                        "stability_score": muscle_data["overall_stability"],
+                        "form_quality": muscle_data["form_analysis"]["form_score"],
+                        "sensor_data": muscle_data["muscle_activation"],
+                        "timestamp": muscle_data["timestamp"]
+                    }
+                )
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error getting muscle analysis for user {user_id}: {str(e)}")
+            return {
+                "error": f"Analysis failed: {str(e)}",
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    async def stop_muscle_monitoring(self, user_id: str) -> Dict[str, Any]:
+        """
+        Stop CoreSense monitoring and get session summary
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Dict containing session summary and insights
+        """
+        try:
+            if not self.fabric_sensor:
+                return {"error": "CoreSense fabric sensor not available"}
+            
+            # Stop monitoring and get session summary
+            session_result = await self.fabric_sensor.stop_exercise()
+            
+            # Generate comprehensive session insights
+            session_insights = self._generate_session_insights(
+                session_result["session_summary"]
+            )
+            
+            # Log session to analytics server
+            if self.is_connected:
+                await self.mcp_client.call_tool(
+                    "progress_analytics",
+                    "log_session_data",
+                    {
+                        "user_id": user_id,
+                        "session_summary": session_result["session_summary"],
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+            
+            logger.info(f"Stopped CoreSense monitoring for user {user_id}")
+            return {
+                "status": "monitoring_stopped",
+                "user_id": user_id,
+                "session_summary": session_result["session_summary"],
+                "session_insights": session_insights,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error stopping muscle monitoring for user {user_id}: {str(e)}")
+            return {
+                "error": f"Failed to stop monitoring: {str(e)}",
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _analyze_muscle_activation_patterns(self, muscle_data: Dict[str, Any], user_prefs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Analyze muscle activation patterns and provide AI coaching insights
+        """
+        activation = muscle_data.get("muscle_activation", {})
+        form_analysis = muscle_data.get("form_analysis", {})
+        exercise = muscle_data.get("exercise", "unknown")
+        
+        # Analyze activation patterns
+        insights = {
+            "primary_focus": [],
+            "improvement_areas": [],
+            "coaching_cues": [],
+            "intensity_level": "moderate"
+        }
+        
+        # Exercise-specific analysis
+        if exercise == "plank":
+            if activation.get("transverse", 0) > 0.8:
+                insights["primary_focus"].append("Excellent deep core activation")
+            else:
+                insights["improvement_areas"].append("Increase deep core engagement")
+                insights["coaching_cues"].append("Draw belly button toward spine")
+            
+            if activation.get("erector_spinae", 0) > 0.9:
+                insights["improvement_areas"].append("Reduce back arch")
+                insights["coaching_cues"].append("Slightly lower hips, engage glutes")
+        
+        elif exercise == "side_plank":
+            dominant_oblique = max(activation.get("right_oblique", 0), activation.get("left_oblique", 0))
+            if dominant_oblique > 0.8:
+                insights["primary_focus"].append("Strong oblique activation")
+            else:
+                insights["improvement_areas"].append("Increase side core strength")
+                insights["coaching_cues"].append("Push up through supporting arm")
+        
+        # Determine intensity level
+        avg_activation = sum(activation.values()) / len(activation) if activation else 0
+        if avg_activation > 0.7:
+            insights["intensity_level"] = "high"
+        elif avg_activation < 0.4:
+            insights["intensity_level"] = "low"
+        
+        # Add form-based insights
+        if form_analysis.get("form_score", 100) < 80:
+            insights["improvement_areas"].extend(form_analysis.get("issues", []))
+            insights["coaching_cues"].extend(form_analysis.get("recommendations", []))
+        
+        return insights
+    
+    def _generate_session_insights(self, session_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate comprehensive insights from session data
+        """
+        avg_stability = session_summary.get("average_stability", 0)
+        exercise_type = session_summary.get("exercise_type", "unknown")
+        duration = session_summary.get("session_duration", 0)
+        
+        insights = {
+            "performance_rating": "good",
+            "key_achievements": [],
+            "areas_for_improvement": [],
+            "next_session_recommendations": []
+        }
+        
+        # Performance rating
+        if avg_stability >= 85:
+            insights["performance_rating"] = "excellent"
+            insights["key_achievements"].append("Maintained excellent stability throughout session")
+        elif avg_stability >= 70:
+            insights["performance_rating"] = "good"
+            insights["key_achievements"].append("Consistent stability performance")
+        else:
+            insights["performance_rating"] = "needs_improvement"
+            insights["areas_for_improvement"].append("Focus on maintaining core stability")
+        
+        # Duration-based insights
+        if duration > 50:  # Good session length
+            insights["key_achievements"].append("Completed full training session")
+        elif duration < 20:
+            insights["areas_for_improvement"].append("Try to extend session duration")
+        
+        # Exercise-specific recommendations
+        if exercise_type == "plank":
+            insights["next_session_recommendations"].append("Consider adding side plank variations")
+        elif exercise_type == "side_plank":
+            insights["next_session_recommendations"].append("Work on plank-to-side-plank transitions")
+        
+        return insights
 
 # Agent instance for import
 core_training_agent = CoreTrainingAgent()
